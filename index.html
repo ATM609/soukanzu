@@ -1,0 +1,223 @@
+```html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>雷距離計算機</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Inter', 'sans-serif';
+            touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .screen {
+            display: none;
+            height: 100vh;
+            width: 100%;
+        }
+        .active {
+            display: flex;
+        }
+        /* Background gradient */
+        .bg-lightning {
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+        }
+        .tap-feedback {
+            animation: pulse 0.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .7; }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white overflow-hidden">
+
+    <!-- Screen 1: Temperature Input -->
+    <div id="screen1" class="screen active flex-col items-center justify-center p-6 bg-lightning">
+        <div class="mb-8 text-center">
+            <div class="text-6xl mb-4">🌡️</div>
+            <h1 class="text-2xl font-bold mb-2">現在の気温を入力</h1>
+            <p class="text-slate-400 text-sm">音速を正確に計算するために必要です</p>
+        </div>
+        <div class="relative mb-8">
+            <input type="number" id="tempInput" value="20" class="bg-slate-800 text-5xl font-bold text-center w-40 py-4 rounded-2xl border-2 border-yellow-500 focus:outline-none focus:ring-4 focus:ring-yellow-500/20">
+            <span class="absolute right-[-40px] bottom-4 text-2xl font-bold">°C</span>
+        </div>
+        <button onclick="goToScreen2()" class="w-full max-w-xs bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-extrabold py-4 rounded-xl text-xl transition-transform active:scale-95 shadow-lg shadow-yellow-500/20">
+            次へ
+        </button>
+    </div>
+
+    <!-- Screen 2: Stopwatch / Measurement -->
+    <div id="screen2" class="screen flex-col items-center justify-center relative overflow-hidden" onmousedown="startTimer()" onmouseup="stopTimer()" ontouchstart="startTimer(event)" ontouchend="stopTimer(event)">
+        <div class="z-10 text-center pointer-events-none">
+            <div id="timerStatus" class="text-xl font-medium mb-4 text-yellow-400 uppercase tracking-widest">画面を長押しして計測</div>
+            <div id="timerDisplay" class="text-7xl font-mono font-black">0.000<span class="text-2xl ml-1 text-slate-500">s</span></div>
+        </div>
+        <!-- Visual Ping effect -->
+        <div class="absolute inset-0 bg-slate-800/50 flex items-center justify-center opacity-20">
+            <div class="w-64 h-64 border-4 border-dashed border-white rounded-full animate-ping"></div>
+        </div>
+        <div id="flashOverlay" class="absolute inset-0 bg-white opacity-0 pointer-events-none transition-opacity duration-100"></div>
+    </div>
+
+    <!-- Screen 3: Results -->
+    <div id="screen3" class="screen flex-col p-6 bg-lightning overflow-y-auto">
+        <div class="mt-8 mb-10 text-center">
+            <h2 class="text-xl text-slate-400 font-bold mb-2 uppercase tracking-widest">推定距離</h2>
+            <div id="distanceResult" class="text-7xl font-black text-yellow-500 mb-2">---</div>
+            <div id="timeResultLabel" class="text-slate-400 text-lg">経過時間: -- s</div>
+        </div>
+
+        <!-- Unit Settings -->
+        <div class="bg-slate-800/50 p-6 rounded-3xl border border-slate-700 mb-8">
+            <h3 class="text-sm font-bold text-slate-400 mb-4 uppercase">単位設定</h3>
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="setUnit('m')" id="unit-m" class="unit-btn bg-slate-700 py-3 rounded-xl font-bold transition-colors">m</button>
+                <button onclick="setUnit('km')" id="unit-km" class="unit-btn bg-slate-700 py-3 rounded-xl font-bold transition-colors">km</button>
+                <button onclick="setUnit('auto')" id="unit-auto" class="unit-btn bg-yellow-500 text-slate-900 py-3 rounded-xl font-bold transition-colors">自動</button>
+            </div>
+        </div>
+
+        <!-- Data Info -->
+        <div class="space-y-4 mb-8">
+            <div class="flex justify-between items-center text-sm text-slate-400 px-2">
+                <span>音速 (計算値)</span>
+                <span id="soundSpeedLabel">--- m/s</span>
+            </div>
+            <div class="flex justify-between items-center text-sm text-slate-400 px-2">
+                <span>現在の設定気温</span>
+                <span id="tempLabel">-- °C</span>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-auto space-y-3 pb-4">
+            <button onclick="remeasure()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-extrabold py-4 rounded-xl text-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                <span>⚡</span> 再計測する
+            </button>
+            <button onclick="resetToTemp()" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl text-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                <span>🌡️</span> 気温を再入力
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let startTime;
+        let timerInterval;
+        let elapsedTime = 0;
+        let isMeasuring = false;
+        let temperature = 20;
+        let unitMode = 'auto';
+
+        function goToScreen2() {
+            temperature = parseFloat(document.getElementById('tempInput').value) || 0;
+            document.getElementById('screen1').classList.remove('active');
+            document.getElementById('screen2').classList.add('active');
+            resetTimerDisplay();
+        }
+
+        function startTimer(e) {
+            if (e) e.preventDefault();
+            if (isMeasuring) return;
+            
+            isMeasuring = true;
+            startTime = performance.now();
+            document.getElementById('timerStatus').innerText = "離すと終了";
+            document.getElementById('timerStatus').classList.add('tap-feedback');
+            document.getElementById('flashOverlay').style.opacity = '0.1';
+
+            timerInterval = setInterval(() => {
+                const now = performance.now();
+                elapsedTime = (now - startTime) / 1000;
+                document.getElementById('timerDisplay').innerHTML = `${elapsedTime.toFixed(3)}<span class="text-2xl ml-1 text-slate-500">s</span>`;
+            }, 10);
+        }
+
+        function stopTimer(e) {
+            if (e) e.preventDefault();
+            if (!isMeasuring) return;
+
+            isMeasuring = false;
+            clearInterval(timerInterval);
+            document.getElementById('flashOverlay').style.opacity = '0';
+            
+            // Short delay before showing results
+            setTimeout(() => {
+                calculateAndShowResult();
+            }, 500);
+        }
+
+        function calculateAndShowResult() {
+            // Formula: V = 331.5 + 0.6 * t
+            const soundSpeed = 331.5 + (0.6 * temperature);
+            const distance = soundSpeed * elapsedTime;
+
+            updateDisplay(distance, soundSpeed);
+
+            document.getElementById('screen2').classList.remove('active');
+            document.getElementById('screen3').classList.add('active');
+        }
+
+        function updateDisplay(distance, soundSpeed) {
+            let displayValue = "";
+            let displayUnit = "";
+
+            if (unitMode === 'km' || (unitMode === 'auto' && distance >= 1000)) {
+                displayValue = (distance / 1000).toFixed(2);
+                displayUnit = "km";
+            } else {
+                displayValue = Math.round(distance);
+                displayUnit = "m";
+            }
+
+            document.getElementById('distanceResult').innerHTML = `${displayValue}<span class="text-3xl ml-2 text-slate-400">${displayUnit}</span>`;
+            document.getElementById('timeResultLabel').innerText = `経過時間: ${elapsedTime.toFixed(3)} s`;
+            document.getElementById('soundSpeedLabel').innerText = `${soundSpeed.toFixed(1)} m/s`;
+            document.getElementById('tempLabel').innerText = `${temperature} °C`;
+        }
+
+        function setUnit(mode) {
+            unitMode = mode;
+            document.querySelectorAll('.unit-btn').forEach(btn => {
+                btn.classList.remove('bg-yellow-500', 'text-slate-900');
+                btn.classList.add('bg-slate-700', 'text-white');
+            });
+            const activeBtn = document.getElementById(`unit-${mode}`);
+            activeBtn.classList.remove('bg-slate-700', 'text-white');
+            activeBtn.classList.add('bg-yellow-500', 'text-slate-900');
+
+            const soundSpeed = 331.5 + (0.6 * temperature);
+            const distance = soundSpeed * elapsedTime;
+            updateDisplay(distance, soundSpeed);
+        }
+
+        function resetTimerDisplay() {
+            elapsedTime = 0;
+            document.getElementById('timerDisplay').innerHTML = `0.000<span class="text-2xl ml-1 text-slate-500">s</span>`;
+            document.getElementById('timerStatus').innerText = "画面を長押しして計測";
+            document.getElementById('timerStatus').classList.remove('tap-feedback');
+        }
+
+        // Just remeasure with current temp
+        function remeasure() {
+            resetTimerDisplay();
+            document.getElementById('screen3').classList.remove('active');
+            document.getElementById('screen2').classList.add('active');
+        }
+
+        // Return to temperature input
+        function resetToTemp() {
+            document.getElementById('screen3').classList.remove('active');
+            document.getElementById('screen1').classList.add('active');
+        }
+    </script>
+</body>
+</html>
+
+```
